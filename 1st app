@@ -1,0 +1,71 @@
+import time
+import threading
+import random
+import numpy as np
+from flask import Flask, jsonify
+from sklearn.ensemble import RandomForestClassifier
+
+# ------------------------------------
+# Flask App
+# ------------------------------------
+app = Flask(__name__)
+
+latest_data = {}
+latest_prediction = {}
+data_lock = threading.Lock()
+
+# ------------------------------------
+# Sensor Simulator
+# ------------------------------------
+def read_sensors():
+    return {
+        "pH": round(random.uniform(5.5, 9.5), 2),
+        "turbidity": round(random.uniform(0, 50), 2),
+        "tds": round(random.uniform(50, 1500), 2),
+        "temperature": round(random.uniform(10, 40), 2),
+        "orp": round(random.uniform(100, 500), 2)
+    }
+
+# ------------------------------------
+# Train Model
+# ------------------------------------
+def train_model():
+    X, y = [], []
+
+    for _ in range(1000):
+        ph = random.uniform(5.5, 9.5)
+        turb = random.uniform(0, 50)
+        tds = random.uniform(50, 1500)
+        temp = random.uniform(10, 40)
+        orp = random.uniform(100, 500)
+
+        contaminated = int(
+            ph < 6.5 or ph > 8.5 or
+            turb > 5 or
+            tds > 500 or
+            orp < 250
+        )
+
+        X.append([ph, turb, tds, temp, orp])
+        y.append(contaminated)
+
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    return model
+
+model = train_model()
+
+# ------------------------------------
+# Monitoring Loop
+# ------------------------------------
+def monitoring_loop():
+    global latest_data, latest_prediction
+
+    while True:
+        sensor_data = read_sensors()
+
+        input_array = np.array([[
+            sensor_data["pH"],
+            sensor_data["turbidity"],
+            sensor_data["tds"],
+            sensor_data["temperature"],
