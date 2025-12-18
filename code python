@@ -1,0 +1,146 @@
+"""
+Real-Time Water Contamination Detection System
+----------------------------------------------
+• Multiple sensor inputs
+• Machine learning based detection
+• Thread-safe real-time monitoring
+• Flask REST API
+"""
+
+import time
+import threading
+import random
+import numpy as np
+from flask import Flask, jsonify
+from sklearn.ensemble import RandomForestClassifier
+
+# =========================================================
+# Flask App Initialization
+# =========================================================
+app = Flask(__name__)
+
+# Shared system state (thread-safe)
+latest_sensor_data = {}
+latest_prediction = {}
+data_lock = threading.Lock()
+
+# =========================================================
+# Sensor Interface (Replace with real hardware)
+# =========================================================
+def read_sensors():
+    """
+    Simulate sensor readings.
+    Replace this function with actual sensor inputs
+    (ESP32, Arduino, MQTT, Serial, REST, etc.)
+    """
+    return {
+        "pH": round(random.uniform(5.5, 9.5), 2),
+        "turbidity": round(random.uniform(0, 50), 2),     # NTU
+        "tds": round(random.uniform(50, 1500), 2),        # ppm
+        "temperature": round(random.uniform(10, 40), 2),  # °C
+        "orp": round(random.uniform(100, 500), 2)         # mV
+    }
+
+# =========================================================
+# Machine Learning Model
+# =========================================================
+def train_detection_model():
+    """
+    Train a contamination detection model.
+    Replace synthetic data with real labeled datasets.
+    """
+    X, y = [], []
+
+    for _ in range(2000):
+        ph = random.uniform(5.5, 9.5)
+        turb = random.uniform(0, 50)
+        tds = random.uniform(50, 1500)
+        temp = random.uniform(10, 40)
+        orp = random.uniform(100, 500)
+
+        contaminated = int(
+            ph < 6.5 or ph > 8.5 or
+            turb > 5 or
+            tds > 500 or
+            orp < 250
+        )
+
+        X.append([ph, turb, tds, temp, orp])
+        y.append(contaminated)
+
+    model = RandomForestClassifier(
+        n_estimators=100,
+        random_state=42
+    )
+    model.fit(X, y)
+    return model
+
+model = train_detection_model()
+
+# =========================================================
+# Background Monitoring Thread
+# =========================================================
+def monitoring_loop():
+    global latest_sensor_data, latest_prediction
+
+    while True:
+        sensor_data = read_sensors()
+
+        input_vector = np.array([[
+            sensor_data["pH"],
+            sensor_data["turbidity"],
+            sensor_data["tds"],
+            sensor_data["temperature"],
+            sensor_data["orp"]
+        ]])
+
+        prediction = model.predict(input_vector)[0]
+        probability = model.predict_proba(input_vector)[0][1]
+
+        with data_lock:
+            latest_sensor_data = sensor_data
+            latest_prediction = {
+                "contaminated": bool(prediction),
+                "confidence": round(probability, 2),
+                "status": "UNSAFE" if prediction else "SAFE",
+                "timestamp": time.time()
+            }
+
+        if prediction:
+            print("⚠️ ALERT: Water contamination detected")
+
+        time.sleep(2)
+
+# =========================================================
+# REST API Endpoints
+# =========================================================
+@app.route("/data", methods=["GET"])
+def get_sensor_data():
+    with data_lock:
+        return jsonify(latest_sensor_data)
+
+@app.route("/prediction", methods=["GET"])
+def get_prediction():
+    with data_lock:
+        return jsonify(latest_prediction)
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({"system": "running"})
+
+# =========================================================
+# Application Entry Point
+# =========================================================
+if __name__ == "__main__":
+    monitoring_thread = threading.Thread(
+        target=monitoring_loop,
+        daemon=True
+    )
+    monitoring_thread.start()
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False,
+        use_reloader=False
+    )
